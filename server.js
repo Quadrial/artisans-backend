@@ -20,7 +20,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // CORS middleware
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: process.env.CLIENT_URL || 'https://craftconnectt.netlify.app',
     credentials: true,
   })
 );
@@ -28,7 +28,7 @@ app.use(
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/profile', require('./routes/profileRoutes'));
-app.use('/api/profile', require('./routes/profileRoutes'));
+app.use('/api/posts', require('./routes/postRoutes'));
 
 // Health check route
 app.get('/api/health', (req, res) => {
