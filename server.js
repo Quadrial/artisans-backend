@@ -46,6 +46,7 @@ app.use('/api/profile', require('./routes/profileRoutes'));
 app.use('/api/posts', require('./routes/postRoutes'));
 app.use('/api/jobs', require('./routes/jobApplicationRoutes'));
 app.use('/api/messages', require('./routes/messageRoutes'));
+app.use('/api/artisans', require('./routes/artisanRoutes'));
 
 // Health check route
 app.get('/api/health', (req, res) => {
