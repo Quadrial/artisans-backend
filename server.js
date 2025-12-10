@@ -20,7 +20,7 @@ const server = http.createServer(app);
 // Initialize Socket.IO
 const io = socketIo(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'https://craftconnectt.netlify.app',
+    origin: process.env.CLIENT_URL || 'https://craftconnectt.netlify.app' || 'http://192.168.137.1:5173',
     credentials: true,
   },
 });
@@ -38,7 +38,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // CORS middleware
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'https://craftconnectt.netlify.app',
+    origin: process.env.CLIENT_URL || 'https://craftconnectt.netlify.app' || 'http://192.168.137.1:5173',
     credentials: true,
   })
 );
@@ -50,6 +50,7 @@ app.use('/api/posts', require('./routes/postRoutes'));
 app.use('/api/jobs', require('./routes/jobApplicationRoutes'));
 app.use('/api/messages', require('./routes/messageRoutes'));
 app.use('/api/artisans', require('./routes/artisanRoutes'));
+app.use('/api/verification', require('./routes/verificationRoutes'));
 
 // Health check route
 app.get('/api/health', (req, res) => {

@@ -57,6 +57,50 @@ const userSchema = new mongoose.Schema(
         },
       },
     },
+    // KYC Verification with Blockchain Integration
+    verification: {
+      didit: {
+        status: {
+          type: String,
+          enum: ['none', 'initiated', 'pending', 'verified', 'rejected'],
+          default: 'none'
+        },
+        sessionId: String,
+        verificationLevel: String,
+        completedAt: Date,
+        expiresAt: Date,
+        documentType: String,
+        documentCountry: String,
+        riskScore: Number,
+        trustScore: {
+          type: Number,
+          min: 0,
+          max: 100,
+          default: 0
+        }
+      },
+      blockchain: {
+        hash: String, // SHA256 hash of verification data
+        txHash: String, // Cardano transaction hash
+        blockHeight: Number,
+        network: {
+          type: String,
+          enum: ['mainnet', 'testnet'],
+          default: 'testnet'
+        },
+        storedAt: Date,
+        verified: {
+          type: Boolean,
+          default: false
+        }
+      },
+      metadata: {
+        ipAddress: String,
+        userAgent: String,
+        deviceFingerprint: String,
+        lastVerificationAttempt: Date
+      }
+    },
     isVerified: {
       type: Boolean,
       default: false,
