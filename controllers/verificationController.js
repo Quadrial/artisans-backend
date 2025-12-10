@@ -200,6 +200,109 @@ exports.getVerificationStatus = async (req, res) => {
   }
 };
 
+// @desc    Simulate verification completion (Development only)
+// @route   POST /api/verification/simulate-complete
+// @access  Private
+exports.simulateVerificationComplete = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if user has initiated verification
+    if (user.verification?.didit?.status !== 'initiated' && user.verification?.didit?.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'No active verification session found'
+      });
+    }
+
+    // Simulate successful verification data
+    const verificationData = {
+      userId,
+      status: 'verified',
+      verificationData: {
+        documentType: 'passport',
+        documentCountry: 'NG',
+        verificationLevel: 'enhanced',
+        riskScore: 15,
+        completedAt: new Date().toISOString(),
+        diditTransactionId: `didit_sim_${Date.now()}`
+      },
+      metadata: {
+        ipAddress: req.ip || '127.0.0.1',
+        userAgent: req.get('User-Agent') || 'Unknown',
+        deviceFingerprint: `fp_${Date.now()}`
+      }
+    };
+
+    // Generate hash for blockchain storage
+    const verificationHash = cardanoService.generateVerificationHash(verificationData);
+    
+    // Store hash on Cardano blockchain
+    const blockchainMetadata = cardanoService.createVerificationMetadata(verificationData);
+    const blockchainResult = await cardanoService.storeVerificationHash(verificationHash, blockchainMetadata);
+
+    // Calculate trust score
+    const trustScore = diditService.calculateTrustScore(verificationData.verificationData);
+
+    // Update user verification data
+    const updateData = {
+      'verification.didit.status': 'verified',
+      'verification.didit.verificationLevel': 'enhanced',
+      'verification.didit.completedAt': new Date(),
+      'verification.didit.documentType': 'passport',
+      'verification.didit.documentCountry': 'NG',
+      'verification.didit.riskScore': 15,
+      'verification.didit.trustScore': trustScore,
+      
+      // Blockchain data
+      'verification.blockchain.hash': verificationHash,
+      'verification.blockchain.txHash': blockchainResult.txHash,
+      'verification.blockchain.blockHeight': blockchainResult.blockHeight,
+      'verification.blockchain.network': 'testnet',
+      'verification.blockchain.storedAt': new Date(),
+      'verification.blockchain.verified': true,
+      
+      // Metadata
+      'verification.metadata.ipAddress': verificationData.metadata.ipAddress,
+      'verification.metadata.userAgent': verificationData.metadata.userAgent,
+      'verification.metadata.deviceFingerprint': verificationData.metadata.deviceFingerprint,
+      
+      // Update main verification status
+      'isVerified': true
+    };
+
+    await User.findByIdAndUpdate(userId, updateData);
+
+    console.log('✅ Simulated verification completion for user:', userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Verification completed successfully',
+      verification: {
+        status: 'verified',
+        trustScore: trustScore,
+        blockchainHash: verificationHash,
+        txHash: blockchainResult.txHash
+      }
+    });
+  } catch (error) {
+    console.error('Simulate verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to complete verification',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Reset verification status
 // @route   POST /api/verification/reset
 // @access  Private
