@@ -136,12 +136,48 @@ exports.getVerificationStatus = async (req, res) => {
       });
     }
 
+    let status = user.verification?.didit?.status || 'none';
+    
+    // Check if verification session has expired
+    if (status === 'initiated' || status === 'pending') {
+      const expiresAt = user.verification?.didit?.expiresAt;
+      const lastAttempt = user.verification?.metadata?.lastVerificationAttempt;
+      
+      // Check if session expired (24 hours for initiated, 7 days for pending)
+      const now = new Date();
+      let isExpired = false;
+      
+      if (status === 'initiated' && expiresAt) {
+        isExpired = now > new Date(expiresAt);
+      } else if (status === 'initiated' && lastAttempt) {
+        // If no expiresAt, check if more than 2 hours since last attempt
+        const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+        isExpired = new Date(lastAttempt) < twoHoursAgo;
+      } else if (status === 'pending' && lastAttempt) {
+        // Pending status expires after 7 days
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        isExpired = new Date(lastAttempt) < sevenDaysAgo;
+      }
+      
+      // Reset expired sessions
+      if (isExpired) {
+        await User.findByIdAndUpdate(req.user.id, {
+          'verification.didit.status': 'none',
+          'verification.didit.sessionId': null,
+          'verification.didit.expiresAt': null
+        });
+        status = 'none';
+        console.log(`🔄 Reset expired verification session for user ${req.user.id}`);
+      }
+    }
+
     const verificationSummary = {
-      status: user.verification?.didit?.status || 'none',
+      status,
       isVerified: user.isVerified,
       level: user.verification?.didit?.verificationLevel,
       trustScore: user.verification?.didit?.trustScore || 0,
       completedAt: user.verification?.didit?.completedAt,
+      expiresAt: user.verification?.didit?.expiresAt,
       blockchain: {
         verified: user.verification?.blockchain?.verified || false,
         hash: user.verification?.blockchain?.hash,
@@ -159,6 +195,53 @@ exports.getVerificationStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to get verification status',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Reset verification status
+// @route   POST /api/verification/reset
+// @access  Private
+exports.resetVerification = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Only allow reset if not already verified
+    if (user.verification?.didit?.status === 'verified') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot reset completed verification'
+      });
+    }
+
+    // Reset verification status
+    await User.findByIdAndUpdate(userId, {
+      'verification.didit.status': 'none',
+      'verification.didit.sessionId': null,
+      'verification.didit.expiresAt': null,
+      'verification.metadata.lastVerificationAttempt': new Date()
+    });
+
+    console.log(`🔄 Manual verification reset for user ${userId}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Verification status reset successfully'
+    });
+  } catch (error) {
+    console.error('Reset verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset verification',
       error: error.message
     });
   }
