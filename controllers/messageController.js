@@ -35,6 +35,14 @@ exports.getMessages = async (req, res) => {
     const { userId } = req.params;
     const { page = 1, limit = 50 } = req.query;
 
+    // Prevent users from creating conversations with themselves
+    if (req.user.id === userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot have a conversation with yourself',
+      });
+    }
+
     // Get or create conversation
     const conversation = await Conversation.getOrCreate(req.user.id, userId);
 
@@ -89,6 +97,14 @@ exports.sendMessage = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Receiver and content are required',
+      });
+    }
+
+    // Prevent users from messaging themselves
+    if (req.user.id === receiverId) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot send a message to yourself',
       });
     }
 

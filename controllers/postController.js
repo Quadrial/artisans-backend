@@ -82,6 +82,7 @@ exports.getPosts = async (req, res) => {
 
     const posts = await Post.find(query)
       .populate('user', 'username email role profile.profilePicture profile.fullName profile.state profile.city')
+      .populate('comments.user', 'username profile.profilePicture profile.fullName')
       .sort(sort)
       .limit(parseInt(limit))
       .skip(skip);
@@ -115,7 +116,7 @@ exports.getPost = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id)
       .populate('user', 'username email role profile.profilePicture profile.fullName profile.state profile.city profile.phone')
-      .populate('comments.user', 'username profile.profilePicture');
+      .populate('comments.user', 'username profile.profilePicture profile.fullName');
 
     if (!post) {
       return res.status(404).json({
@@ -151,6 +152,7 @@ exports.getUserPosts = async (req, res) => {
 
     const posts = await Post.find({ user: userId, isActive: true })
       .populate('user', 'username email role profile.profilePicture profile.fullName')
+      .populate('comments.user', 'username profile.profilePicture profile.fullName')
       .sort('-createdAt');
 
     res.status(200).json({
@@ -333,7 +335,12 @@ exports.addComment = async (req, res) => {
     });
 
     await post.save();
-    await post.populate('comments.user', 'username profile.profilePicture');
+    
+    // Re-populate all comments with user data
+    await post.populate({
+      path: 'comments.user',
+      select: 'username profile.profilePicture profile.fullName'
+    });
 
     res.status(201).json({
       success: true,
@@ -397,6 +404,7 @@ exports.getSavedPosts = async (req, res) => {
   try {
     const posts = await Post.find({ saves: req.user.id, isActive: true })
       .populate('user', 'username email role profile.profilePicture profile.fullName')
+      .populate('comments.user', 'username profile.profilePicture profile.fullName')
       .sort('-createdAt');
 
     res.status(200).json({

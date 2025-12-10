@@ -56,3 +56,34 @@ exports.authorize = (...roles) => {
     next();
   };
 };
+
+// Optional authentication - sets req.user if token is valid, but doesn't require it
+exports.optionalAuth = async (req, res, next) => {
+  let token;
+
+  // Check for token in headers
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith('Bearer')
+  ) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+
+  // If no token, continue without setting req.user
+  if (!token) {
+    return next();
+  }
+
+  try {
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Get user from token
+    req.user = await User.findById(decoded.id).select('-password');
+
+    next();
+  } catch (error) {
+    // If token is invalid, continue without setting req.user
+    next();
+  }
+};

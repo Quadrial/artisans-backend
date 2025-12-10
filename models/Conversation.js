@@ -31,6 +31,11 @@ conversationSchema.index({ participants: 1 }, { unique: true });
 
 // Method to get or create conversation
 conversationSchema.statics.getOrCreate = async function(userId1, userId2) {
+  // Prevent self-conversations
+  if (userId1 === userId2) {
+    throw new Error('Cannot create conversation with yourself');
+  }
+
   const participants = [userId1, userId2].sort();
   
   let conversation = await this.findOne({
@@ -40,10 +45,10 @@ conversationSchema.statics.getOrCreate = async function(userId1, userId2) {
   if (!conversation) {
     conversation = await this.create({
       participants,
-      unreadCount: {
-        [userId1]: 0,
-        [userId2]: 0,
-      }
+      unreadCount: new Map([
+        [userId1, 0],
+        [userId2, 0]
+      ])
     });
   }
 

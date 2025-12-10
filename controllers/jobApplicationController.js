@@ -163,7 +163,8 @@ exports.updateApplicationStatus = async (req, res) => {
 
     const application = await JobApplication.findById(applicationId)
       .populate('job')
-      .populate('artisan', 'username email profile');
+      .populate('artisan', 'username email profile')
+      .populate('customer', 'username email profile');
 
     if (!application) {
       return res.status(404).json({
@@ -173,7 +174,7 @@ exports.updateApplicationStatus = async (req, res) => {
     }
 
     // Check if user is the job owner
-    if (application.customer.toString() !== req.user.id) {
+    if (application.customer._id.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this application',
@@ -182,6 +183,68 @@ exports.updateApplicationStatus = async (req, res) => {
 
     application.status = status;
     await application.save();
+
+    // Send automatic message when application is accepted
+    if (status === 'accepted') {
+      try {
+        const Message = require('../models/Message');
+        const Conversation = require('../models/Conversation');
+
+        // Get or create conversation between customer and artisan
+        const conversation = await Conversation.getOrCreate(
+          application.customer._id,
+          application.artisan._id
+        );
+
+        // Create automatic acceptance message
+        const customerName = application.customer.profile?.fullName || application.customer.username;
+        const jobTitle = application.job.title;
+        const proposedPrice = application.proposedPrice;
+
+        const messageContent = `🎉 Great news! ${customerName} has accepted your proposal for "${jobTitle}"!\n\n` +
+          `💰 Agreed Price: ₦${proposedPrice}\n` +
+          `📋 Job Details: ${application.job.description}\n\n` +
+          `You can now start working on this project. Feel free to message ${customerName} if you have any questions!`;
+
+        const message = await Message.create({
+          conversation: conversation._id,
+          sender: application.customer._id,
+          receiver: application.artisan._id,
+          content: messageContent,
+          type: 'text',
+        });
+
+        // Update conversation
+        conversation.lastMessage = message._id;
+        conversation.lastMessageAt = new Date();
+        
+        // Increment unread count for artisan
+        const currentUnread = conversation.unreadCount.get(application.artisan._id) || 0;
+        conversation.unreadCount.set(application.artisan._id, currentUnread + 1);
+        
+        await conversation.save();
+
+        // Emit socket event for real-time notification
+        const io = req.app.get('io');
+        if (io) {
+          // Find artisan's socket and send real-time notification
+          io.emit('newMessage', {
+            conversation: conversation._id,
+            sender: application.customer._id,
+            receiver: application.artisan._id,
+            content: messageContent,
+            type: 'text',
+            createdAt: new Date(),
+            isAutomatic: true
+          });
+        }
+
+        console.log(`Automatic acceptance message sent to artisan ${application.artisan.username}`);
+      } catch (messageError) {
+        console.error('Failed to send automatic message:', messageError);
+        // Don't fail the application update if message fails
+      }
+    }
 
     res.status(200).json({
       success: true,

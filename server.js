@@ -28,6 +28,9 @@ const io = socketIo(server, {
 // Setup socket handlers
 setupSocket(io);
 
+// Make io available to controllers
+app.set('io', io);
+
 // Body parser middleware with increased limit for image uploads
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

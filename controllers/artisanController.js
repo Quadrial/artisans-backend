@@ -24,6 +24,11 @@ exports.getArtisans = async (req, res) => {
       isActive: true,
     };
 
+    // Exclude current user from results (prevent self-messaging)
+    if (req.user && req.user.id) {
+      query._id = { $ne: req.user.id };
+    }
+
     // Search by name, profession, or skills
     if (search) {
       query.$or = [
@@ -64,7 +69,7 @@ exports.getArtisans = async (req, res) => {
 
     // Execute query
     const artisans = await User.find(query)
-      .select('username email profile isVerified createdAt')
+      .select('_id username email profile isVerified createdAt')
       .sort(sort)
       .limit(parseInt(limit))
       .skip(skip);
@@ -100,7 +105,7 @@ exports.getArtisanById = async (req, res) => {
       _id: req.params.id,
       role: 'artisan',
       isActive: true,
-    }).select('username email profile isVerified createdAt');
+    }).select('_id username email profile isVerified createdAt');
 
     if (!artisan) {
       return res.status(404).json({
