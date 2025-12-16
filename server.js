@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const fileUpload = require('express-fileupload');
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 const setupSocket = require('./socket/socketHandler');
@@ -20,7 +21,7 @@ const server = http.createServer(app);
 // Initialize Socket.IO
 const io = socketIo(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'https://craftconnectt.netlify.app' || 'http://192.168.137.1:5173',
+    origin: process.env.CLIENT_URL || 'https://craftconnectt.netlify.app',
     credentials: true,
   },
 });
@@ -35,10 +36,17 @@ app.set('io', io);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// File upload middleware
+app.use(fileUpload({
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  abortOnLimit: true,
+  responseOnLimit: 'File size limit exceeded'
+}));
+
 // CORS middleware
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'https://craftconnectt.netlify.app' || 'http://192.168.137.1:5173',
+    origin: process.env.CLIENT_URL || 'https://craftconnectt.netlify.app',
     credentials: true,
   })
 );
@@ -51,6 +59,7 @@ app.use('/api/jobs', require('./routes/jobApplicationRoutes'));
 app.use('/api/messages', require('./routes/messageRoutes'));
 app.use('/api/artisans', require('./routes/artisanRoutes'));
 app.use('/api/verification', require('./routes/verificationRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
 
 // Health check route
 app.get('/api/health', (req, res) => {

@@ -101,6 +101,55 @@ const userSchema = new mongoose.Schema(
         lastVerificationAttempt: Date
       }
     },
+    
+    // Document storage for manual NIN verification
+    documents: {
+      nin_number: {
+        type: String,
+        sparse: true, // Allow null values but enforce uniqueness when present
+        unique: true, // Ensure NIN numbers are unique across all users
+        validate: {
+          validator: function(v) {
+            // Only validate if NIN is provided
+            return !v || (typeof v === 'string' && v.length === 11 && /^\d{11}$/.test(v));
+          },
+          message: 'NIN must be exactly 11 digits'
+        }
+      },
+      nin_front: {
+        filename: String,
+        size: Number,
+        mimetype: String,
+        data: String // Base64 encoded image data
+      },
+      nin_back: {
+        filename: String,
+        size: Number,
+        mimetype: String,
+        data: String
+      },
+      selfie: {
+        filename: String,
+        size: Number,
+        mimetype: String,
+        data: String
+      },
+      video: {
+        filename: String,
+        size: Number,
+        mimetype: String,
+        data: String // Base64 encoded video data (optional)
+      },
+      submitted_at: Date,
+      reviewed_at: Date,
+      reviewed_by: {
+        type: mongoose.Schema.Types.Mixed, // Can be ObjectId or String (for admin)
+        ref: 'User'
+      },
+      review_notes: String,
+      ip_address: String,
+      user_agent: String
+    },
     isVerified: {
       type: Boolean,
       default: false,

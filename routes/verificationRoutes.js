@@ -4,16 +4,20 @@ const {
   initiateVerification,
   handleWebhook,
   getVerificationStatus,
+  submitDocuments,
   simulateVerificationComplete,
   resetVerification,
   verifyBlockchainHash,
-  getAllVerifications
+  getAllVerifications,
+  getPendingVerifications,
+  reviewVerification
 } = require('../controllers/verificationController');
 const { protect, authorize } = require('../middleware/auth');
 
 // User verification routes
 router.post('/initiate', protect, initiateVerification);
 router.get('/status', protect, getVerificationStatus);
+router.post('/submit-documents', protect, submitDocuments);
 router.post('/simulate-complete', protect, simulateVerificationComplete);
 router.post('/reset', protect, resetVerification);
 
@@ -21,6 +25,8 @@ router.post('/reset', protect, resetVerification);
 router.post('/webhook', handleWebhook);
 
 // Admin routes
+router.get('/admin/pending', protect, authorize('admin'), getPendingVerifications);
+router.post('/admin/review', protect, authorize('admin'), reviewVerification);
 router.post('/verify-blockchain', protect, authorize('admin'), verifyBlockchainHash);
 router.get('/admin/all', protect, authorize('admin'), getAllVerifications);
 

@@ -200,6 +200,116 @@ exports.getVerificationStatus = async (req, res) => {
   }
 };
 
+// @desc    Submit verification documents
+// @route   POST /api/verification/submit-documents
+// @access  Private
+exports.submitDocuments = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { nin_number } = req.body;
+
+    // Validate NIN number
+    if (!nin_number || nin_number.length !== 11 || !/^\d{11}$/.test(nin_number)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid 11-digit NIN number is required'
+      });
+    }
+
+    // Check if NIN is already used by another user
+    const existingNinUser = await User.findOne({
+      'documents.nin_number': nin_number,
+      _id: { $ne: userId } // Exclude current user
+    });
+
+    if (existingNinUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'This NIN number is already registered with another account'
+      });
+    }
+
+    // Check if required files are uploaded
+    if (!req.files || !req.files.nin_front || !req.files.nin_back || !req.files.selfie) {
+      return res.status(400).json({
+        success: false,
+        message: 'All required documents are needed (NIN front, NIN back, selfie)'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Store document information (in production, save files to cloud storage)
+    const documentData = {
+      nin_number,
+      nin_front: {
+        filename: req.files.nin_front.name,
+        size: req.files.nin_front.size,
+        mimetype: req.files.nin_front.mimetype,
+        data: req.files.nin_front.data.toString('base64')
+      },
+      nin_back: {
+        filename: req.files.nin_back.name,
+        size: req.files.nin_back.size,
+        mimetype: req.files.nin_back.mimetype,
+        data: req.files.nin_back.data.toString('base64')
+      },
+      selfie: {
+        filename: req.files.selfie.name,
+        size: req.files.selfie.size,
+        mimetype: req.files.selfie.mimetype,
+        data: req.files.selfie.data.toString('base64')
+      },
+      submitted_at: new Date(),
+      ip_address: req.ip || req.connection.remoteAddress,
+      user_agent: req.get('User-Agent')
+    };
+
+    // Add video if provided (optional)
+    if (req.files.video) {
+      documentData.video = {
+        filename: req.files.video.name,
+        size: req.files.video.size,
+        mimetype: req.files.video.mimetype,
+        data: req.files.video.data.toString('base64')
+      };
+    }
+
+    // Update user verification status
+    await User.findByIdAndUpdate(userId, {
+      'verification.didit.status': 'pending',
+      'verification.didit.sessionId': `manual_${Date.now()}`,
+      'verification.didit.completedAt': null,
+      'documents': documentData, // Store documents at top level
+      'verification.metadata.lastVerificationAttempt': new Date(),
+      'verification.metadata.ipAddress': documentData.ip_address,
+      'verification.metadata.userAgent': documentData.user_agent
+    });
+
+    console.log(`📄 Manual verification documents submitted for user ${userId} with NIN: ${nin_number.substring(0, 3)}***`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Documents submitted successfully for manual review',
+      status: 'pending',
+      estimated_review_time: '24-48 hours'
+    });
+  } catch (error) {
+    console.error('Submit documents error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit documents',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Simulate verification completion (Development only)
 // @route   POST /api/verification/simulate-complete
 // @access  Private
@@ -401,6 +511,180 @@ exports.verifyBlockchainHash = async (req, res) => {
   }
 };
 
+// @desc    Get pending verifications for admin review
+// @route   GET /api/verification/admin/pending
+// @access  Private (Admin only)
+exports.getPendingVerifications = async (req, res) => {
+  try {
+    const users = await User.find({
+      'verification.didit.status': 'pending',
+      $or: [
+        { 'documents.nin_number': { $exists: true } },
+        { 'verification.documents.nin_number': { $exists: true } }
+      ]
+    })
+      .select('username email documents verification')
+      .sort({ 'documents.submitted_at': -1 });
+
+    const pendingVerifications = users.map(user => {
+      // Check both locations for documents
+      const docs = user.documents || user.verification?.documents;
+      
+      return {
+        userId: user._id,
+        username: user.username,
+        email: user.email,
+        submittedAt: docs?.submitted_at,
+        documents: {
+          nin_number: docs?.nin_number,
+          nin_front: docs?.nin_front,
+          nin_back: docs?.nin_back,
+          selfie: docs?.selfie || docs?.face_photo, // Handle both field names
+          video: docs?.video
+        },
+        metadata: {
+          ipAddress: user.verification?.metadata?.ipAddress,
+          userAgent: user.verification?.metadata?.userAgent
+        }
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      verifications: pendingVerifications
+    });
+  } catch (error) {
+    console.error('Get pending verifications error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get pending verifications',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Review verification (approve/reject)
+// @route   POST /api/verification/admin/review
+// @access  Private (Admin only)
+exports.reviewVerification = async (req, res) => {
+  try {
+    const { userId, decision, notes } = req.body;
+    const adminId = req.user.id;
+
+    if (!userId || !decision || !['approve', 'reject'].includes(decision)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid userId and decision (approve/reject) are required'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.verification?.didit?.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'No pending verification found for this user'
+      });
+    }
+
+    let updateData = {
+      'documents.reviewed_at': new Date(),
+      'documents.reviewed_by': adminId,
+      'documents.review_notes': notes || ''
+    };
+
+    if (decision === 'approve') {
+      // Generate verification data for blockchain storage
+      const verificationData = {
+        userId,
+        status: 'verified',
+        verificationData: {
+          documentType: 'nin',
+          documentCountry: 'NG',
+          verificationLevel: 'enhanced',
+          riskScore: 10,
+          completedAt: new Date().toISOString(),
+          ninNumber: user.documents?.nin_number
+        },
+        metadata: {
+          ipAddress: user.verification?.metadata?.ipAddress || 'unknown',
+          userAgent: user.verification?.metadata?.userAgent || 'unknown',
+          deviceFingerprint: `fp_${Date.now()}`
+        }
+      };
+
+      // Generate hash for blockchain storage
+      const cardanoService = require('../services/cardanoService');
+      const verificationHash = cardanoService.generateVerificationHash(verificationData);
+      
+      // Store hash on Cardano blockchain
+      const blockchainMetadata = cardanoService.createVerificationMetadata(verificationData);
+      const blockchainResult = await cardanoService.storeVerificationHash(verificationHash, blockchainMetadata);
+
+      // Calculate trust score
+      const diditService = require('../services/diditService');
+      const trustScore = diditService.calculateTrustScore(verificationData.verificationData);
+
+      updateData = {
+        ...updateData,
+        'verification.didit.status': 'verified',
+        'verification.didit.verificationLevel': 'enhanced',
+        'verification.didit.completedAt': new Date(),
+        'verification.didit.documentType': 'nin',
+        'verification.didit.documentCountry': 'NG',
+        'verification.didit.riskScore': 10,
+        'verification.didit.trustScore': trustScore,
+        
+        // Blockchain data - use actual network from environment
+        'verification.blockchain.hash': verificationHash,
+        'verification.blockchain.txHash': blockchainResult.txHash,
+        'verification.blockchain.blockHeight': blockchainResult.blockHeight,
+        'verification.blockchain.network': process.env.CARDANO_NETWORK || 'mainnet',
+        'verification.blockchain.storedAt': new Date(),
+        'verification.blockchain.verified': true,
+        
+        // Update main verification status
+        'isVerified': true
+      };
+
+      console.log(`✅ Verification approved for user ${userId} by admin ${adminId}`);
+    } else {
+      // Rejection
+      updateData = {
+        ...updateData,
+        'verification.didit.status': 'rejected',
+        'verification.didit.completedAt': new Date(),
+        'isVerified': false
+      };
+
+      console.log(`❌ Verification rejected for user ${userId} by admin ${adminId}`);
+    }
+
+    await User.findByIdAndUpdate(userId, updateData);
+
+    res.status(200).json({
+      success: true,
+      message: `Verification ${decision}d successfully`,
+      decision,
+      reviewedBy: adminId,
+      reviewedAt: new Date()
+    });
+  } catch (error) {
+    console.error('Review verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to review verification',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Get all verifications (Admin only)
 // @route   GET /api/verification/admin/all
 // @access  Private (Admin only)
@@ -414,7 +698,7 @@ exports.getAllVerifications = async (req, res) => {
     }
 
     const users = await User.find(query)
-      .select('username email verification isVerified createdAt')
+      .select('username email verification isVerified createdAt documents')
       .sort('-verification.didit.completedAt')
       .limit(parseInt(limit))
       .skip((parseInt(page) - 1) * parseInt(limit));
@@ -429,6 +713,7 @@ exports.getAllVerifications = async (req, res) => {
       isVerified: user.isVerified,
       trustScore: user.verification?.didit?.trustScore || 0,
       completedAt: user.verification?.didit?.completedAt,
+      reviewedAt: user.documents?.reviewed_at,
       blockchain: {
         hash: user.verification?.blockchain?.hash,
         txHash: user.verification?.blockchain?.txHash,

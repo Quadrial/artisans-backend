@@ -25,14 +25,25 @@ exports.protect = async (req, res, next) => {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Get user from token
-    req.user = await User.findById(decoded.id).select('-password');
+    // Handle admin tokens differently
+    if (decoded.id === 'admin' && decoded.role === 'admin') {
+      // For admin tokens, use the decoded data directly
+      req.user = {
+        id: decoded.id,
+        username: decoded.username,
+        email: decoded.email,
+        role: decoded.role
+      };
+    } else {
+      // For regular users, get user from database
+      req.user = await User.findById(decoded.id).select('-password');
 
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found',
-      });
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
     }
 
     next();
@@ -78,8 +89,19 @@ exports.optionalAuth = async (req, res, next) => {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Get user from token
-    req.user = await User.findById(decoded.id).select('-password');
+    // Handle admin tokens differently
+    if (decoded.id === 'admin' && decoded.role === 'admin') {
+      // For admin tokens, use the decoded data directly
+      req.user = {
+        id: decoded.id,
+        username: decoded.username,
+        email: decoded.email,
+        role: decoded.role
+      };
+    } else {
+      // For regular users, get user from database
+      req.user = await User.findById(decoded.id).select('-password');
+    }
 
     next();
   } catch (error) {
