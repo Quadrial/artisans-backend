@@ -10,7 +10,8 @@ const {
   verifyBlockchainHash,
   getAllVerifications,
   getPendingVerifications,
-  reviewVerification
+  reviewVerification,
+  getWalletStatus
 } = require('../controllers/verificationController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -29,5 +30,6 @@ router.get('/admin/pending', protect, authorize('admin'), getPendingVerification
 router.post('/admin/review', protect, authorize('admin'), reviewVerification);
 router.post('/verify-blockchain', protect, authorize('admin'), verifyBlockchainHash);
 router.get('/admin/all', protect, authorize('admin'), getAllVerifications);
+router.get('/admin/wallet-status', protect, authorize('admin'), getWalletStatus);
 
 module.exports = router;

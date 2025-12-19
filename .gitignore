@@ -3,6 +3,7 @@ node_modules/
 
 # Environment variables
 .env
+eternl-testnet-xpub127gzy958ejc-pm.json
 
 # Logs
 logs

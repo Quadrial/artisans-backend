@@ -600,7 +600,7 @@ exports.reviewVerification = async (req, res) => {
     };
 
     if (decision === 'approve') {
-      // Generate verification data for blockchain storage
+      // Generate verification data for blockchain storage FIRST
       const verificationData = {
         userId,
         status: 'verified',
@@ -620,12 +620,104 @@ exports.reviewVerification = async (req, res) => {
       };
 
       // Generate hash for blockchain storage
-      const cardanoService = require('../services/cardanoService');
       const verificationHash = cardanoService.generateVerificationHash(verificationData);
       
-      // Store hash on Cardano blockchain
-      const blockchainMetadata = cardanoService.createVerificationMetadata(verificationData);
-      const blockchainResult = await cardanoService.storeVerificationHash(verificationHash, blockchainMetadata);
+      console.log('📝 Verification data prepared:', {
+        userId,
+        hash: verificationHash.substring(0, 16) + '...'
+      });
+
+      // Check if wallet is ready for blockchain transactions
+      console.log('🔍 Checking wallet readiness for user verification approval...');
+      const readiness = await cardanoService.checkTransactionReadiness();
+      
+      console.log('📊 Wallet readiness check result:', {
+        ready: readiness.ready,
+        reason: readiness.reason,
+        canTransact: readiness.canTransact,
+        balance: readiness.balance
+      });
+      
+      let blockchainResult;
+      
+      if (!readiness.ready) {
+        console.error('❌ Wallet not ready for transactions:', readiness.reason);
+        
+        // For any wallet readiness issues, use simulation mode for now
+        console.warn('⚠️  Wallet not ready - proceeding with simulated blockchain transaction');
+        console.log('📋 Readiness issue:', readiness.reason);
+        
+        // Create simulated blockchain data
+        const simulatedTxHash = `sim_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+        const currentBlock = Math.floor(Date.now() / 1000) + 1000000;
+        
+        blockchainResult = {
+          hash: verificationHash,
+          txHash: simulatedTxHash,
+          blockHeight: currentBlock,
+          network: process.env.CARDANO_NETWORK || 'preprod',
+          timestamp: new Date().toISOString(),
+          isReal: false,
+          simulated: true,
+          reason: `Wallet issue: ${readiness.reason}`
+        };
+        
+        console.log('📦 Created simulated blockchain transaction:', {
+          txHash: blockchainResult.txHash,
+          blockHeight: blockchainResult.blockHeight,
+          reason: blockchainResult.reason
+        });
+      } else {
+        console.log('✅ Wallet ready for transactions:', readiness.balance);
+      }
+      
+      // Only try to create real blockchain transaction if wallet is ready and we haven't already created a simulated one
+      if (!blockchainResult) {
+        console.log('🔗 Preparing real blockchain transaction for verification approval...');
+        const blockchainMetadata = cardanoService.createVerificationMetadata(verificationData);
+        try {
+          console.log('🚀 Attempting to store verification hash on blockchain...');
+          blockchainResult = await cardanoService.storeVerificationHash(verificationHash, blockchainMetadata);
+          
+          console.log('📦 Blockchain storage result:', {
+            success: !!blockchainResult,
+            isReal: blockchainResult?.isReal,
+            txHash: blockchainResult?.txHash,
+            network: blockchainResult?.network
+          });
+          
+          console.log('✅ Blockchain transaction successful:', blockchainResult.txHash);
+          
+        } catch (blockchainError) {
+          console.error('❌ Blockchain transaction failed:', {
+            error: blockchainError.message,
+            stack: blockchainError.stack,
+            userId,
+            hash: verificationHash.substring(0, 16) + '...'
+          });
+          
+          // Create fallback simulated transaction
+          console.warn('⚠️  Creating fallback simulated transaction due to blockchain error');
+          const simulatedTxHash = `fallback_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+          const currentBlock = Math.floor(Date.now() / 1000) + 1000000;
+          
+          blockchainResult = {
+            hash: verificationHash,
+            txHash: simulatedTxHash,
+            blockHeight: currentBlock,
+            network: process.env.CARDANO_NETWORK || 'preprod',
+            timestamp: new Date().toISOString(),
+            isReal: false,
+            simulated: true,
+            reason: `Blockchain error: ${blockchainError.message}`
+          };
+          
+          console.log('📦 Created fallback simulated transaction:', {
+            txHash: blockchainResult.txHash,
+            reason: blockchainResult.reason
+          });
+        }
+      }
 
       // Calculate trust score
       const diditService = require('../services/diditService');
@@ -645,15 +737,19 @@ exports.reviewVerification = async (req, res) => {
         'verification.blockchain.hash': verificationHash,
         'verification.blockchain.txHash': blockchainResult.txHash,
         'verification.blockchain.blockHeight': blockchainResult.blockHeight,
-        'verification.blockchain.network': process.env.CARDANO_NETWORK || 'mainnet',
+        'verification.blockchain.network': blockchainResult.network || process.env.CARDANO_NETWORK || 'preprod',
         'verification.blockchain.storedAt': new Date(),
         'verification.blockchain.verified': true,
+        'verification.blockchain.confirmed': blockchainResult.confirmed || false,
+        'verification.blockchain.isReal': blockchainResult.isReal || false,
+        'verification.blockchain.simulated': blockchainResult.simulated || false,
+        'verification.blockchain.simulationReason': blockchainResult.reason || null,
         
         // Update main verification status
         'isVerified': true
       };
 
-      console.log(`✅ Verification approved for user ${userId} by admin ${adminId}`);
+      console.log(`✅ Verification approved for user ${userId} by admin ${adminId} with blockchain TX: ${blockchainResult.txHash}`);
     } else {
       // Rejection
       updateData = {
@@ -680,6 +776,37 @@ exports.reviewVerification = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to review verification',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get wallet status and balance (Admin only)
+// @route   GET /api/verification/admin/wallet-status
+// @access  Private (Admin only)
+exports.getWalletStatus = async (req, res) => {
+  try {
+    // Get wallet status
+    const status = cardanoService.getWalletStatus();
+    
+    // Get wallet balance if initialized
+    let balance = null;
+    if (status.initialized) {
+      balance = await cardanoService.getWalletBalance();
+    }
+    
+    res.status(200).json({
+      success: true,
+      wallet: {
+        ...status,
+        balance
+      }
+    });
+  } catch (error) {
+    console.error('Get wallet status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get wallet status',
       error: error.message
     });
   }

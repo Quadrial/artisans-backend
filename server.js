@@ -60,6 +60,7 @@ app.use('/api/messages', require('./routes/messageRoutes'));
 app.use('/api/artisans', require('./routes/artisanRoutes'));
 app.use('/api/verification', require('./routes/verificationRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/blockfrost', require('./routes/blockfrostRoutes'));
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -68,6 +69,62 @@ app.get('/api/health', (req, res) => {
     message: 'CraftConnect API is running',
     timestamp: new Date().toISOString(),
   });
+});
+
+// Wallet status route for debugging
+app.get('/api/wallet-status', async (req, res) => {
+  try {
+    const cardanoService = require('./services/cardanoService');
+    const status = cardanoService.getWalletStatus();
+    const readiness = await cardanoService.checkTransactionReadiness();
+    
+    res.status(200).json({
+      success: true,
+      wallet: status,
+      readiness: readiness,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get wallet status',
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// Test verification approval (for debugging)
+app.post('/api/test-verification', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId is required'
+      });
+    }
+    
+    // Simulate the verification approval process
+    const cardanoService = require('./services/cardanoService');
+    const readiness = await cardanoService.checkTransactionReadiness();
+    
+    res.status(200).json({
+      success: true,
+      message: 'Test verification process completed',
+      userId,
+      walletReadiness: readiness,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Test verification failed',
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 // 404 handler
