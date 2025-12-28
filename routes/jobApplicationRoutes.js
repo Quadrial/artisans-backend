@@ -6,6 +6,8 @@ const {
   getMyApplications,
   updateApplicationStatus,
   withdrawApplication,
+  closeJob,
+  reopenJob,
 } = require('../controllers/jobApplicationController');
 const { protect } = require('../middleware/auth');
 
@@ -17,5 +19,7 @@ router.delete('/applications/:applicationId', protect, withdrawApplication);
 // Customer routes
 router.get('/:jobId/applications', protect, getJobApplications);
 router.put('/applications/:applicationId', protect, updateApplicationStatus);
+router.put('/:jobId/close', protect, closeJob);
+router.put('/:jobId/reopen', protect, reopenJob);
 
 module.exports = router;

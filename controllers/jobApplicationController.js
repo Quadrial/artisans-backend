@@ -17,12 +17,29 @@ exports.applyForJob = async (req, res) => {
       });
     }
 
+    // Check if artisan is verified
+    if (!req.user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only verified artisans can apply for jobs. Please complete your identity verification first.',
+        requiresVerification: true,
+      });
+    }
+
     // Check if job exists
     const job = await Post.findById(jobId).populate('user');
     if (!job || job.type !== 'job') {
       return res.status(404).json({
         success: false,
         message: 'Job not found',
+      });
+    }
+
+    // Check if job is still open
+    if (job.status === 'closed') {
+      return res.status(400).json({
+        success: false,
+        message: 'This job is no longer accepting applications',
       });
     }
 
@@ -51,7 +68,7 @@ exports.applyForJob = async (req, res) => {
     });
 
     await application.populate([
-      { path: 'artisan', select: 'username email profile' },
+      { path: 'artisan', select: 'username email profile isVerified' },
       { path: 'job', select: 'title description budget' },
     ]);
 
@@ -62,6 +79,118 @@ exports.applyForJob = async (req, res) => {
     });
   } catch (error) {
     console.error('Apply for job error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Close a job (Customer only)
+// @route   PUT /api/jobs/:jobId/close
+// @access  Private (Job owner only)
+exports.closeJob = async (req, res) => {
+  try {
+    const jobId = req.params.jobId;
+
+    // Check if job exists and user is the owner
+    const job = await Post.findById(jobId);
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        message: 'Job not found',
+      });
+    }
+
+    if (job.user.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to close this job',
+      });
+    }
+
+    if (job.type !== 'job') {
+      return res.status(400).json({
+        success: false,
+        message: 'This is not a job post',
+      });
+    }
+
+    if (job.status === 'closed') {
+      return res.status(400).json({
+        success: false,
+        message: 'Job is already closed',
+      });
+    }
+
+    // Update job status to closed
+    job.status = 'closed';
+    await job.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Job closed successfully',
+      job,
+    });
+  } catch (error) {
+    console.error('Close job error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Reopen a job (Customer only)
+// @route   PUT /api/jobs/:jobId/reopen
+// @access  Private (Job owner only)
+exports.reopenJob = async (req, res) => {
+  try {
+    const jobId = req.params.jobId;
+
+    // Check if job exists and user is the owner
+    const job = await Post.findById(jobId);
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        message: 'Job not found',
+      });
+    }
+
+    if (job.user.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to reopen this job',
+      });
+    }
+
+    if (job.type !== 'job') {
+      return res.status(400).json({
+        success: false,
+        message: 'This is not a job post',
+      });
+    }
+
+    if (job.status === 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'Job is already active',
+      });
+    }
+
+    // Update job status to active
+    job.status = 'active';
+    await job.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Job reopened successfully',
+      job,
+    });
+  } catch (error) {
+    console.error('Reopen job error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',

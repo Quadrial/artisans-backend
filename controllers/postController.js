@@ -18,6 +18,15 @@ exports.createPost = async (req, res) => {
       });
     }
 
+    // Check if user is verified for job posting
+    if (type === 'job' && !req.user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only verified customers can post jobs. Please complete your identity verification first.',
+        requiresVerification: true,
+      });
+    }
+
     const post = await Post.create({
       user: req.user.id,
       type,
@@ -33,7 +42,7 @@ exports.createPost = async (req, res) => {
     });
 
     // Populate user details
-    await post.populate('user', 'username email role profile.profilePicture profile.fullName');
+    await post.populate('user', 'username email role profile.profilePicture profile.fullName isVerified');
 
     res.status(201).json({
       success: true,
