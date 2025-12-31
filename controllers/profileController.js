@@ -107,7 +107,43 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// @desc    Upload profile picture
+// @desc    Get another user's public profile
+// @route   GET /api/profile/user/:userId
+// @access  Private
+exports.getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      profile: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        profile: user.profile,
+        isVerified: user.verification?.didit?.status === 'verified',
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Upload profile photo
 // @route   POST /api/profile/upload-photo
 // @access  Private
 exports.uploadProfilePhoto = async (req, res) => {

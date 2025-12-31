@@ -152,21 +152,61 @@ exports.getPost = async (req, res) => {
   }
 };
 
-// @desc    Get user's posts
+// @desc    Get user's posts (owned and saved)
 // @route   GET /api/posts/user/:userId
 // @access  Private
 exports.getUserPosts = async (req, res) => {
   try {
     const userId = req.params.userId || req.user.id;
 
-    const posts = await Post.find({ user: userId, isActive: true })
+    // Get posts owned by the user
+    const ownedPosts = await Post.find({ user: userId, isActive: true })
       .populate('user', 'username email role profile.profilePicture profile.fullName')
       .populate('comments.user', 'username profile.profilePicture profile.fullName')
       .sort('-createdAt');
 
+    // Get posts shared by the user
+    const sharedPosts = await Post.find({ shares: userId, isActive: true })
+      .populate('user', 'username email role profile.profilePicture profile.fullName')
+      .populate('comments.user', 'username profile.profilePicture profile.fullName')
+      .sort('-createdAt');
+
+    // Get posts saved by the user
+    const savedPosts = await Post.find({ saves: userId, isActive: true })
+      .populate('user', 'username email role profile.profilePicture profile.fullName')
+      .populate('comments.user', 'username profile.profilePicture profile.fullName')
+      .sort('-createdAt');
+
+    // Combine and deduplicate posts (owned > shared > saved)
+    const postMap = new Map();
+    
+    // Add owned posts first
+    ownedPosts.forEach(post => {
+      postMap.set(post._id.toString(), { ...post.toObject(), postType: 'owned' });
+    });
+    
+    // Add shared posts (only if not already included as owned)
+    sharedPosts.forEach(post => {
+      if (!postMap.has(post._id.toString())) {
+        postMap.set(post._id.toString(), { ...post.toObject(), postType: 'shared' });
+      }
+    });
+    
+    // Add saved posts (only if not already included)
+    savedPosts.forEach(post => {
+      if (!postMap.has(post._id.toString())) {
+        postMap.set(post._id.toString(), { ...post.toObject(), postType: 'saved' });
+      }
+    });
+
+    // Convert back to array and sort by creation date
+    const allPosts = Array.from(postMap.values()).sort((a, b) => 
+      new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
     res.status(200).json({
       success: true,
-      posts,
+      posts: allPosts,
     });
   } catch (error) {
     console.error('Get user posts error:', error);
@@ -398,6 +438,46 @@ exports.toggleSave = async (req, res) => {
     });
   } catch (error) {
     console.error('Toggle save error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Share/Unshare post
+// @route   POST /api/posts/:id/share
+// @access  Private
+exports.toggleShare = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found',
+      });
+    }
+
+    const shareIndex = post.shares.indexOf(req.user.id);
+
+    if (shareIndex > -1) {
+      // Unshare
+      post.shares.splice(shareIndex, 1);
+    } else {
+      // Share
+      post.shares.push(req.user.id);
+    }
+
+    await post.save();
+
+    res.status(200).json({
+      success: true,
+      shared: shareIndex === -1,
+    });
+  } catch (error) {
+    console.error('Toggle share error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',

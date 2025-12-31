@@ -10,6 +10,7 @@ const {
   toggleLike,
   addComment,
   toggleSave,
+  toggleShare,
   getSavedPosts,
 } = require('../controllers/postController');
 const { protect } = require('../middleware/auth');
@@ -27,5 +28,6 @@ router.delete('/:id', protect, deletePost);
 router.post('/:id/like', protect, toggleLike);
 router.post('/:id/comment', protect, addComment);
 router.post('/:id/save', protect, toggleSave);
+router.post('/:id/share', protect, toggleShare);
 
 module.exports = router;

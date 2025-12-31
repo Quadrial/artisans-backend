@@ -85,7 +85,7 @@ const userSchema = new mongoose.Schema(
         blockHeight: Number,
         network: {
           type: String,
-          enum: ['mainnet', 'testnet'],
+          enum: ['mainnet', 'testnet', 'preprod'],
           default: 'testnet'
         },
         storedAt: Date,

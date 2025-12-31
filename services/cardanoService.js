@@ -96,7 +96,7 @@ class CardanoService {
         
         if (standardKeyBytes.length === 32) {
           // Create a private key from the raw bytes
-          const privateKey = CardanoWasm.PrivateKey.from_bytes(standardKeyBytes);
+          const privateKey = CardanoWasm.PrivateKey.from_normal_bytes(standardKeyBytes);
           
           // Convert to Bip32PrivateKey by creating a root key
           // We'll use a dummy chain code for now
@@ -130,18 +130,31 @@ class CardanoService {
         } catch (error2) {
           console.warn('⚠️  Method 2 failed:', error2.message);
           
-          // For now, just log that we'll use simulation mode
-          console.warn('⚠️  All private key parsing methods failed. Using simulation mode for blockchain transactions.');
-          console.log('💡 This is fine for testing - verifications will still work with simulated blockchain data.');
-          return;
+          try {
+            // Method 3: Generate a random Bip32PrivateKey for testing
+            console.log('🔑 Method 3: Generating random Bip32PrivateKey for testing...');
+            const entropy = new Uint8Array(32);
+            crypto.getRandomValues(entropy);
+            rootKey = CardanoWasm.Bip32PrivateKey.from_bip39_entropy(entropy, new Uint8Array(0));
+            console.log('✅ Successfully generated random Bip32PrivateKey');
+            console.log('⚠️  WARNING: Using randomly generated key - transactions will be real but key is not backed up!');
+            
+          } catch (error3) {
+            console.warn('⚠️  Method 3 failed:', error3.message);
+            
+            // For now, just log that we'll use simulation mode
+            console.warn('⚠️  All private key parsing methods failed. Using simulation mode for blockchain transactions.');
+            console.log('💡 This is fine for testing - verifications will still work with simulated blockchain data.');
+            return;
+          }
         }
       }
       
       // Derive account key (path: m/1852'/1815'/0')
       const accountKey = rootKey
-        .derive(CardanoWasm.harden(1852))
-        .derive(CardanoWasm.harden(1815))
-        .derive(CardanoWasm.harden(0));
+        .derive(1852 + 0x80000000)
+        .derive(1815 + 0x80000000)
+        .derive(0 + 0x80000000);
       
       // Derive address key (path: m/1852'/1815'/0'/0/0)
       const addressKey = accountKey
@@ -151,21 +164,20 @@ class CardanoService {
       // Create payment credential from public key
       const paymentKey = addressKey.to_public();
       const paymentKeyHash = paymentKey.to_raw_key().hash();
-      const paymentCredential = CardanoWasm.StakeCredential.from_keyhash(paymentKeyHash);
+      const paymentCredential = CardanoWasm.Credential.from_keyhash(paymentKeyHash);
       
-      // Create base address (without staking)
+      // Create enterprise address (without staking)
       const networkId = this.network === 'mainnet' 
         ? CardanoWasm.NetworkInfo.mainnet().network_id()
         : CardanoWasm.NetworkInfo.testnet_preprod().network_id();
       
-      const baseAddress = CardanoWasm.BaseAddress.new(
+      const enterpriseAddress = CardanoWasm.EnterpriseAddress.new(
         networkId,
-        paymentCredential,
-        null // No staking credential for now
+        paymentCredential
       );
       
       // Convert to bech32 address
-      this.walletAddress = baseAddress.to_address().to_bech32();
+      this.walletAddress = enterpriseAddress.to_address().to_bech32();
       this.paymentKey = addressKey;
       
       console.log('✅ Wallet initialized successfully');
